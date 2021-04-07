@@ -43,7 +43,7 @@ func (c *Capture) Run() (func(), error) {
 		}
 	}
 
-	handle, err := pcap.OpenLive("any", 65535, false, pcap.BlockForever)
+	handle, err := pcap.OpenLive("any", 65535, false, 1*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,9 @@ func (c *Capture) Run() (func(), error) {
 
 		for {
 			packet, err := packetSource.NextPacket()
-			if err == io.EOF {
+			if err == pcap.NextErrorTimeoutExpired {
+				continue
+			} else if err == io.EOF {
 				return
 			} else if err != nil {
 				c.logger.Errorf("Got error retrieving packet: %v", err)

@@ -22,10 +22,10 @@ type Proxy struct {
 	certChecker plugin.CertChecker
 }
 
-func (p *Proxy) Run() (func(), error) {
-	listener, err := net.Listen("tcp", "localhost:8003")
+func (p *Proxy) Run() (func(), int, error) {
+	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	wg := &sync.WaitGroup{}
@@ -47,7 +47,9 @@ func (p *Proxy) Run() (func(), error) {
 		}
 	}()
 
-	return func() { listener.Close(); wg.Wait() }, nil
+	listenerPort := listener.Addr().(*net.TCPAddr).Port
+
+	return func() { listener.Close(); wg.Wait() }, listenerPort, nil
 }
 
 func (p *Proxy) handleConn(conn net.Conn) {

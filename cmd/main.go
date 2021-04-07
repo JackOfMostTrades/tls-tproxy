@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/jackofmosttrades/tls-tproxy/dns"
 	"github.com/jackofmosttrades/tls-tproxy/plugin"
+	"github.com/jackofmosttrades/tls-tproxy/redirect"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"os"
@@ -101,11 +102,26 @@ func Main() {
 		certLoader:  certLoader,
 		certChecker: certChecker,
 	}
-	close, err = proxy.Run()
+	close, listenerPort, err := proxy.Run()
 	if err != nil {
 		panic(err)
 	}
 	defer close()
+
+	logger.Debugf("Transparent proxy listening for redirected traffic on port %d", listenerPort)
+
+	err = redirect.Setup(logger, listenerPort)
+	if err != nil {
+		logger.Errorf("Failed to initialize iptables redirect of plaintext connections: %v", err)
+		return
+	}
+	defer func() {
+		logger.Debugf("Cleaning up iptables redirect...")
+		err := redirect.Cleanup(logger)
+		if err != nil {
+			logger.Errorf("Error cleaning up iptables redirect: %v", err)
+		}
+	}()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
