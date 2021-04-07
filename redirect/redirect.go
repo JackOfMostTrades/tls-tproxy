@@ -5,6 +5,7 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/sirupsen/logrus"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -40,7 +41,7 @@ func Cleanup(logger *logrus.Logger) error {
 	return cleanup(logger, ipt)
 }
 
-func Setup(logger *logrus.Logger, listenerPort int) error {
+func Setup(logger *logrus.Logger, listenerPort int, portMap map[uint16]uint16) error {
 	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
 	if err != nil {
 		return fmt.Errorf("unable to initialize iptables: %v", err)
@@ -50,10 +51,15 @@ func Setup(logger *logrus.Logger, listenerPort int) error {
 		return err
 	}
 	pid := os.Getpid()
-	err = ipt.Append("nat", "OUTPUT", "-p", "tcp", "--dport", "17004",
-		"-m", "comment", "--comment", fmt.Sprintf("tls-tproxy-%d", pid), "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", listenerPort))
-	if err != nil {
-		return fmt.Errorf("failed to add iptables rule: %v", err)
+
+	for srcPort := range portMap {
+		err = ipt.Append("nat", "OUTPUT", "-p", "tcp",
+			"-m", "owner", "!", "--uid-owner", "root",
+			"--dport", strconv.Itoa(int(srcPort)),
+			"-m", "comment", "--comment", fmt.Sprintf("tls-tproxy-%d", pid), "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", listenerPort))
+		if err != nil {
+			return fmt.Errorf("failed to add iptables rule: %v", err)
+		}
 	}
 	return nil
 }

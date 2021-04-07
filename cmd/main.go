@@ -12,6 +12,8 @@ import (
 	"io/ioutil"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	_ "github.com/jackofmosttrades/tls-tproxy/plugins/san-verifier"
@@ -28,6 +30,8 @@ func Main() {
 	fs.StringVar(&keyPath, "key", "", "Path to certificate private key (PEM with private key).")
 	var logLevelStr string
 	fs.StringVar(&logLevelStr, "logLevel", "info", fmt.Sprintf("Level to log: possible values: %v", logrus.AllLevels))
+	var portMapStr string
+	fs.StringVar(&portMapStr, "portMap", "8443:443", "Port mapping to use, in the format of src1:dst1,src2:dst2,... Plaintext traffic sent on port src1 will be wrapped with TLS and sent to the target IP on port dst1. The source and destintation ports can be the same.")
 	var certCheckerPlugin string
 	fs.StringVar(&certCheckerPlugin, "certCheckerPlugin", "san_verifier", "The plugin name to use for verifying certificates.")
 
@@ -43,6 +47,26 @@ func Main() {
 
 	logger := logrus.StandardLogger()
 	logger.SetLevel(logLevel)
+
+	portMap := make(map[uint16]uint16)
+	for _, portMapPart := range strings.Split(portMapStr, ",") {
+		vals := strings.SplitN(portMapPart, ":", 2)
+		if len(vals) != 2 {
+			logger.Errorf("Invalid portMap argument: %s", portMapStr)
+			return
+		}
+		src, err := strconv.Atoi(vals[0])
+		if err != nil {
+			logger.Errorf("Invalid portMap argument: %s", portMapStr)
+			return
+		}
+		dst, err := strconv.Atoi(vals[1])
+		if err != nil {
+			logger.Errorf("Invalid portMap argument: %s", portMapStr)
+			return
+		}
+		portMap[uint16(src)] = uint16(dst)
+	}
 
 	var caCert *x509.CertPool
 	if caCertPath != "" {
@@ -101,16 +125,17 @@ func Main() {
 		rootCAs:     caCert,
 		certLoader:  certLoader,
 		certChecker: certChecker,
+		portMap:     portMap,
 	}
-	close, listenerPort, err := proxy.Run()
+	stop, listenerPort, err := proxy.Run()
 	if err != nil {
 		panic(err)
 	}
-	defer close()
+	defer stop()
 
 	logger.Debugf("Transparent proxy listening for redirected traffic on port %d", listenerPort)
 
-	err = redirect.Setup(logger, listenerPort)
+	err = redirect.Setup(logger, listenerPort, portMap)
 	if err != nil {
 		logger.Errorf("Failed to initialize iptables redirect of plaintext connections: %v", err)
 		return

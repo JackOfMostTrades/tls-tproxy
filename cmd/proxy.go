@@ -20,6 +20,7 @@ type Proxy struct {
 	rootCAs     *x509.CertPool
 	certLoader  *cachedCertificateLoader
 	certChecker plugin.CertChecker
+	portMap     map[uint16]uint16
 }
 
 func (p *Proxy) Run() (func(), int, error) {
@@ -65,11 +66,11 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		p.logger.Errorf("Unable to resolve original destination of connection: %v", err)
 		return
 	}
-	if port < 10000 {
+	targetPort := p.portMap[port]
+	if targetPort == 0 {
 		p.logger.Errorf("Unexpect original target port: %d", port)
 		return
 	}
-	targetPort := port - 10000
 
 	hostnames := p.dnsCache.GetAliasesForName(ipv4)
 	if len(hostnames) == 0 {
